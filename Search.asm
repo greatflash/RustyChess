@@ -6,6 +6,7 @@ SEARCH_DEPTH    EQU 2
 SCORE_INF       EQU 30000
 SCORE_MATE      EQU 20000
 
+; Undo stack entry: 15 bytes
 UNDO_ENTRY_SIZE EQU 15
 UNDO_MAX        EQU 4
 
@@ -81,7 +82,7 @@ ai_move:
     XOR COLOR_MASK
     LD (side_to_move), A
 
-    ; Child search
+    ; Child: alpha = -INF, beta = -parent_alpha
     LD HL, (ai_alpha)
     LD A, H
     CPL
@@ -137,8 +138,7 @@ ai_move:
     JP .root_loop
 
 .root_done:
-    ; --- Play the best move using game logic ---
-    ; Get best move from/to
+    ; Execute best move through game logic
     LD A, (ai_best_idx)
     LD L, A
     LD H, 0
@@ -151,7 +151,7 @@ ai_move:
     LD A, (HL)
     LD (move_to), A
 
-    ; Set up moving_piece (needed by execute_move)
+    ; Set up for execute_move
     LD A, (move_from)
     LD HL, board
     LD E, A
@@ -160,7 +160,6 @@ ai_move:
     LD A, (HL)
     LD (moving_piece), A
 
-    ; Set up dest_piece
     LD A, (move_to)
     LD HL, board
     LD E, A
@@ -169,321 +168,7 @@ ai_move:
     LD A, (HL)
     LD (dest_piece), A
 
-    ; --- Do what execute_move does, but skip the legality check ---
-    ; Save state for undo (needed by record_move and captures)
-    LD A, (move_from)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    LD (save_from_piece), A
-
-    LD A, (move_to)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    LD (save_to_piece), A
-
-    LD A, (white_king_sq)
-    LD (save_wking), A
-    LD A, (black_king_sq)
-    LD (save_bking), A
-    LD A, (castling_rights)
-    LD (save_castling), A
-    LD A, (ep_square)
-    LD (save_ep), A
-
-    XOR A
-    LD (did_castle), A
-    LD (did_ep_capture), A
-    LD (did_promote), A
-    LD (save_ep_captured), A
-
-    ; --- Make the move on the board ---
-    LD A, (move_from)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD (HL), EMPTY
-
-    LD A, (move_to)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (moving_piece)
-    LD (HL), A
-
-    ; --- King move ---
-    LD A, (moving_piece)
-    AND PIECE_MASK
-    CP 6
-    JP NZ, .ai_not_king
-
-    LD A, (moving_piece)
-    AND COLOR_MASK
-    JP NZ, .ai_bking
-
-    LD A, (move_to)
-    LD (white_king_sq), A
-    LD A, (castling_rights)
-    AND ~CASTLE_W_ALL & $FF
-    LD (castling_rights), A
-
-    LD A, (move_from)
-    LD B, A
-    LD A, (move_to)
-    SUB B
-    CP 2
-    JP Z, .ai_wk_castle
-    CP $FE
-    JP Z, .ai_wq_castle
-    JP .ai_not_king
-
-.ai_wk_castle:
-    LD A, 1
-    LD (did_castle), A
-    LD A, (board + SQ_H1)
-    LD (save_castle_rook), A
-    LD (board + SQ_F1), A
-    LD A, EMPTY
-    LD (board + SQ_H1), A
-    JP .ai_not_king
-
-.ai_wq_castle:
-    LD A, 1
-    LD (did_castle), A
-    LD A, (board + SQ_A1)
-    LD (save_castle_rook), A
-    LD (board + SQ_D1), A
-    LD A, EMPTY
-    LD (board + SQ_A1), A
-    JP .ai_not_king
-
-.ai_bking:
-    LD A, (move_to)
-    LD (black_king_sq), A
-    LD A, (castling_rights)
-    AND ~CASTLE_B_ALL & $FF
-    LD (castling_rights), A
-
-    LD A, (move_from)
-    LD B, A
-    LD A, (move_to)
-    SUB B
-    CP 2
-    JP Z, .ai_bk_castle
-    CP $FE
-    JP Z, .ai_bq_castle
-    JP .ai_not_king
-
-.ai_bk_castle:
-    LD A, 1
-    LD (did_castle), A
-    LD A, (board + SQ_H8)
-    LD (save_castle_rook), A
-    LD (board + SQ_F8), A
-    LD A, EMPTY
-    LD (board + SQ_H8), A
-    JP .ai_not_king
-
-.ai_bq_castle:
-    LD A, 1
-    LD (did_castle), A
-    LD A, (board + SQ_A8)
-    LD (save_castle_rook), A
-    LD (board + SQ_D8), A
-    LD A, EMPTY
-    LD (board + SQ_A8), A
-
-.ai_not_king:
-    ; --- Rook move castling rights ---
-    LD A, (moving_piece)
-    AND PIECE_MASK
-    CP 4
-    JP NZ, .ai_not_rook
-    LD A, (move_from)
-    CP SQ_A1
-    JP NZ, .ai_nr1
-    LD A, (castling_rights)
-    AND ~CASTLE_WQ & $FF
-    LD (castling_rights), A
-.ai_nr1:
-    LD A, (move_from)
-    CP SQ_H1
-    JP NZ, .ai_nr2
-    LD A, (castling_rights)
-    AND ~CASTLE_WK & $FF
-    LD (castling_rights), A
-.ai_nr2:
-    LD A, (move_from)
-    CP SQ_A8
-    JP NZ, .ai_nr3
-    LD A, (castling_rights)
-    AND ~CASTLE_BQ & $FF
-    LD (castling_rights), A
-.ai_nr3:
-    LD A, (move_from)
-    CP SQ_H8
-    JP NZ, .ai_not_rook
-    LD A, (castling_rights)
-    AND ~CASTLE_BK & $FF
-    LD (castling_rights), A
-.ai_not_rook:
-
-    ; --- Rook capture castling rights ---
-    LD A, (move_to)
-    CP SQ_A1
-    JP NZ, .ai_nc1
-    LD A, (castling_rights)
-    AND ~CASTLE_WQ & $FF
-    LD (castling_rights), A
-.ai_nc1:
-    LD A, (move_to)
-    CP SQ_H1
-    JP NZ, .ai_nc2
-    LD A, (castling_rights)
-    AND ~CASTLE_WK & $FF
-    LD (castling_rights), A
-.ai_nc2:
-    LD A, (move_to)
-    CP SQ_A8
-    JP NZ, .ai_nc3
-    LD A, (castling_rights)
-    AND ~CASTLE_BQ & $FF
-    LD (castling_rights), A
-.ai_nc3:
-    LD A, (move_to)
-    CP SQ_H8
-    JP NZ, .ai_nc4
-    LD A, (castling_rights)
-    AND ~CASTLE_BK & $FF
-    LD (castling_rights), A
-.ai_nc4:
-
-    ; --- En passant capture ---
-    LD A, (moving_piece)
-    AND PIECE_MASK
-    CP 1
-    JP NZ, .ai_not_ep
-    LD A, (ep_square)
-    CP EP_NONE
-    JP Z, .ai_not_ep
-    LD B, A
-    LD A, (move_to)
-    CP B
-    JP NZ, .ai_not_ep
-
-    LD A, 1
-    LD (did_ep_capture), A
-    LD A, (moving_piece)
-    AND COLOR_MASK
-    JP NZ, .ai_ep_black
-    LD A, (move_to)
-    SUB 16
-    JP .ai_ep_rem
-.ai_ep_black:
-    LD A, (move_to)
-    ADD A, 16
-.ai_ep_rem:
-    LD (ep_capture_sq), A
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    LD (save_ep_captured), A
-    LD (HL), EMPTY
-
-.ai_not_ep:
-    ; --- Update EP square ---
-    LD A, EP_NONE
-    LD (ep_square), A
-    LD A, (moving_piece)
-    AND PIECE_MASK
-    CP 1
-    JP NZ, .ai_no_double
-    LD A, (move_from)
-    LD B, A
-    LD A, (move_to)
-    SUB B
-    CP 32
-    JP Z, .ai_ep_w
-    CP $E0
-    JP Z, .ai_ep_b
-    JP .ai_no_double
-.ai_ep_w:
-    LD A, (move_from)
-    ADD A, 16
-    LD (ep_square), A
-    JP .ai_no_double
-.ai_ep_b:
-    LD A, (move_from)
-    SUB 16
-    LD (ep_square), A
-.ai_no_double:
-
-    ; --- Promotion ---
-    LD A, (moving_piece)
-    AND PIECE_MASK
-    CP 1
-    JP NZ, .ai_no_promo
-    LD A, (moving_piece)
-    AND COLOR_MASK
-    JP NZ, .ai_bpromo
-    LD A, (move_to)
-    AND $F0
-    CP $70
-    JP NZ, .ai_no_promo
-    LD A, 1
-    LD (did_promote), A
-    LD A, (move_to)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD (HL), W_QUEEN
-    JP .ai_no_promo
-.ai_bpromo:
-    LD A, (move_to)
-    AND $F0
-    CP $00
-    JP NZ, .ai_no_promo
-    LD A, 1
-    LD (did_promote), A
-    LD A, (move_to)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD (HL), B_QUEEN
-.ai_no_promo:
-
-    ; --- Record capture ---
-    LD A, (save_to_piece)
-    CALL record_capture
-    LD A, (did_ep_capture)
-    OR A
-    JP Z, .ai_no_ep_rec
-    LD A, (save_ep_captured)
-    CALL record_capture
-.ai_no_ep_rec:
-
-    ; Record move in history
-    CALL record_move
-
-    ; Switch side to white
-    LD A, (side_to_move)
-    XOR COLOR_MASK
-    LD (side_to_move), A
-
-    ; Check for game end
-    CALL check_game_end
-
+    CALL execute_move
     RET
 
 ai_root_moves:     DEFS MAX_MOVES * 2, 0
@@ -497,21 +182,29 @@ ai_cur_score:      DEFW 0
 ; =============================================================================
 ; NEGAMAX SEARCH
 ; =============================================================================
+; Input: search_depth, search_alpha, search_beta
+; Output: HL = score from current side's perspective
+; =============================================================================
 negamax:
+    ; Leaf node?
     LD A, (search_depth)
     OR A
     JP Z, evaluate
 
+    ; Generate moves
     CALL generate_moves
 
     LD A, (move_list_count)
     OR A
     JP Z, .no_moves
 
-    ; Copy to depth buffer
+    ; Copy move list to depth-specific buffer
+    ; At depth 2 we use srch_moves_1, at depth 1 we use srch_moves_2
+    ; (depth counts down, so higher depth = earlier in tree)
     LD A, (search_depth)
     CP 2
     JP Z, .copy_d2
+    ; Depth 1
     LD HL, move_list
     LD DE, srch_moves_2
     LD A, (move_list_count)
@@ -532,12 +225,14 @@ negamax:
     LDIR
 
 .search_init:
+    ; Best = -infinity
     LD HL, -SCORE_INF
     LD (node_best), HL
     XOR A
     LD (node_cur_idx), A
 
 .move_loop:
+    ; Get move count for current depth
     LD A, (search_depth)
     CP 2
     JP Z, .cnt_d2
@@ -551,10 +246,11 @@ negamax:
     CP B
     JP NC, .moves_done
 
-    ; Get move
+    ; Get move from correct buffer
     LD A, (search_depth)
     CP 2
     JP Z, .mov_d2
+    ; Depth 1 buffer
     LD A, (node_cur_idx)
     LD L, A
     LD H, 0
@@ -582,7 +278,8 @@ negamax:
     XOR COLOR_MASK
     LD (side_to_move), A
 
-    ; Save parent state on Z80 stack
+    ; Save parent state to Z80 stack
+    ; This is safe because recursion is only 1 level deep (depth 2->1->eval)
     LD HL, (search_alpha)
     PUSH HL
     LD HL, (search_beta)
@@ -594,7 +291,7 @@ negamax:
     LD A, (search_depth)
     PUSH AF
 
-    ; Child alpha = -parent beta, child beta = -parent alpha
+    ; Set up child: alpha = -beta, beta = -alpha, depth = depth-1
     LD HL, (search_beta)
     LD A, H
     CPL
@@ -603,7 +300,7 @@ negamax:
     CPL
     LD L, A
     INC HL
-    PUSH HL                         ; temp save child alpha
+    PUSH HL                         ; Save child alpha
 
     LD HL, (search_alpha)
     LD A, H
@@ -613,15 +310,16 @@ negamax:
     CPL
     LD L, A
     INC HL
-    LD (search_beta), HL            ; child beta = -parent alpha
+    LD (search_beta), HL            ; Child beta = -parent alpha
 
     POP HL
-    LD (search_alpha), HL           ; child alpha = -parent beta
+    LD (search_alpha), HL           ; Child alpha = -parent beta
 
     LD A, (search_depth)
     DEC A
     LD (search_depth), A
 
+    ; Recurse
     CALL negamax
 
     ; Negate child score
@@ -634,7 +332,7 @@ negamax:
     INC HL
     LD (node_child_score), HL
 
-    ; Restore parent state
+    ; Restore parent state from Z80 stack
     POP AF
     LD (search_depth), A
     POP AF
@@ -646,10 +344,12 @@ negamax:
     POP HL
     LD (search_alpha), HL
 
+    ; Switch side back
     LD A, (side_to_move)
     XOR COLOR_MASK
     LD (side_to_move), A
 
+    ; Unmake
     CALL unmake_search_move
 
     ; Score > best?
@@ -659,9 +359,11 @@ negamax:
     JP C, .no_improve
     JP Z, .no_improve
 
+    ; New best
     LD HL, (node_child_score)
     LD (node_best), HL
 
+    ; Update alpha?
     LD DE, (search_alpha)
     CALL signed_compare_hl_de
     JP C, .check_cutoff
@@ -669,10 +371,13 @@ negamax:
     LD (search_alpha), HL
 
 .check_cutoff:
+    ; Alpha >= beta?
     LD HL, (search_alpha)
     LD DE, (search_beta)
     CALL signed_compare_hl_de
     JP C, .no_improve
+
+    ; Cutoff
     LD HL, (node_best)
     RET
 
@@ -687,21 +392,22 @@ negamax:
     RET
 
 .no_moves:
+    ; Checkmate or stalemate?
     LD A, (side_to_move)
     OR A
-    JP NZ, .nm_black
+    JP NZ, .no_moves_black
     LD A, (white_king_sq)
     LD B, BLACK
-    JP .nm_check
-.nm_black:
+    JP .no_moves_check
+.no_moves_black:
     LD A, (black_king_sq)
     LD B, WHITE
-.nm_check:
+.no_moves_check:
     CALL is_square_attacked
-    JP Z, .nm_stalemate
+    JP Z, .is_stalemate
     LD HL, -SCORE_MATE
     RET
-.nm_stalemate:
+.is_stalemate:
     LD HL, 0
     RET
 
@@ -715,6 +421,9 @@ node_child_score:   DEFW 0
 ; =============================================================================
 ; SIGNED 16-BIT COMPARE
 ; =============================================================================
+; HL vs DE (signed)
+; Carry set if HL < DE, Zero if HL == DE, neither if HL > DE
+; =============================================================================
 signed_compare_hl_de:
     LD A, H
     XOR D
@@ -725,17 +434,18 @@ signed_compare_hl_de:
     RET
 .diff_signs:
     BIT 7, H
-    RET Z
-    SCF
+    RET Z                           ; HL positive, DE negative: HL > DE
+    SCF                             ; HL negative, DE positive: HL < DE
     RET
 
 ; =============================================================================
-; MAKE SEARCH MOVE
+; MAKE SEARCH MOVE (incremental with undo stack)
 ; =============================================================================
 make_search_move:
     LD A, (undo_ptr)
     CALL get_undo_ix
 
+    ; Save state
     LD A, (ep_square)
     LD (IX+UNDO_EP), A
     LD A, (castling_rights)
@@ -755,6 +465,7 @@ make_search_move:
     LD A, (move_to)
     LD (IX+UNDO_TO), A
 
+    ; Get moving piece
     LD A, (move_from)
     LD HL, board
     LD E, A
@@ -763,6 +474,7 @@ make_search_move:
     LD A, (HL)
     LD (IX+UNDO_MOVING), A
 
+    ; Get captured piece
     LD A, (move_to)
     LD HL, board
     LD E, A
@@ -771,6 +483,7 @@ make_search_move:
     LD A, (HL)
     LD (IX+UNDO_CAPTURED), A
 
+    ; Clear source
     LD A, (move_from)
     LD HL, board
     LD E, A
@@ -778,6 +491,7 @@ make_search_move:
     ADD HL, DE
     LD (HL), EMPTY
 
+    ; Place on destination
     LD A, (move_to)
     LD HL, board
     LD E, A
@@ -786,44 +500,44 @@ make_search_move:
     LD A, (IX+UNDO_MOVING)
     LD (HL), A
 
-    ; King
+    ; Update king position
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 6
-    JP NZ, .s_nk
+    JP NZ, .not_king
     LD A, (IX+UNDO_MOVING)
     AND COLOR_MASK
-    JP NZ, .s_bk
+    JP NZ, .bk_moved
     LD A, (move_to)
     LD (white_king_sq), A
-    JP .s_nk
-.s_bk:
+    JP .not_king
+.bk_moved:
     LD A, (move_to)
     LD (black_king_sq), A
-.s_nk:
 
-    ; EP capture
+.not_king:
+    ; --- EP capture ---
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 1
-    JP NZ, .s_nep
+    JP NZ, .not_ep
     LD A, (ep_square)
     CP EP_NONE
-    JP Z, .s_nep
+    JP Z, .not_ep
     LD B, A
     LD A, (move_to)
     CP B
-    JP NZ, .s_nep
+    JP NZ, .not_ep
     LD A, (IX+UNDO_MOVING)
     AND COLOR_MASK
-    JP NZ, .s_epb
+    JP NZ, .ep_black
     LD A, (move_to)
     SUB 16
-    JP .s_epd
-.s_epb:
+    JP .ep_do
+.ep_black:
     LD A, (move_to)
     ADD A, 16
-.s_epd:
+.ep_do:
     LD (IX+UNDO_EP_SQ), A
     LD HL, board
     LD E, A
@@ -832,23 +546,24 @@ make_search_move:
     LD A, (HL)
     LD (IX+UNDO_EP_PIECE), A
     LD (HL), EMPTY
-.s_nep:
 
-    ; Castling rook
+.not_ep:
+    ; --- Castling rook ---
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 6
-    JP NZ, .s_nc
+    JP NZ, .not_castle
     LD A, (move_from)
     LD B, A
     LD A, (move_to)
     SUB B
     CP 2
-    JP Z, .s_ksc
+    JP Z, .ks_castle
     CP $FE
-    JP Z, .s_qsc
-    JP .s_nc
-.s_ksc:
+    JP Z, .qs_castle
+    JP .not_castle
+
+.ks_castle:
     LD A, 1
     LD (IX+UNDO_DID_CASTLE), A
     LD A, (move_from)
@@ -870,8 +585,9 @@ make_search_move:
     ADD HL, DE
     LD A, (IX+UNDO_ROOK_PIECE)
     LD (HL), A
-    JP .s_nc
-.s_qsc:
+    JP .not_castle
+
+.qs_castle:
     LD A, 1
     LD (IX+UNDO_DID_CASTLE), A
     LD A, (move_from)
@@ -893,92 +609,94 @@ make_search_move:
     ADD HL, DE
     LD A, (IX+UNDO_ROOK_PIECE)
     LD (HL), A
-.s_nc:
 
-    ; Castling rights
+.not_castle:
+    ; --- Update castling rights ---
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 6
-    JP NZ, .s_cr
+    JP NZ, .chk_rook
     LD A, (IX+UNDO_MOVING)
     AND COLOR_MASK
-    JP NZ, .s_bcl
+    JP NZ, .bk_c_loss
     LD A, (castling_rights)
     AND ~CASTLE_W_ALL & $FF
     LD (castling_rights), A
-    JP .s_cr
-.s_bcl:
+    JP .chk_rook
+.bk_c_loss:
     LD A, (castling_rights)
     AND ~CASTLE_B_ALL & $FF
     LD (castling_rights), A
-.s_cr:
+
+.chk_rook:
     LD A, (move_from)
     CP SQ_A1
-    JP NZ, .s_r1
+    JP NZ, .nA1
     LD A, (castling_rights)
     AND ~CASTLE_WQ & $FF
     LD (castling_rights), A
-.s_r1:
+.nA1:
     LD A, (move_from)
     CP SQ_H1
-    JP NZ, .s_r2
+    JP NZ, .nH1
     LD A, (castling_rights)
     AND ~CASTLE_WK & $FF
     LD (castling_rights), A
-.s_r2:
+.nH1:
     LD A, (move_from)
     CP SQ_A8
-    JP NZ, .s_r3
+    JP NZ, .nA8
     LD A, (castling_rights)
     AND ~CASTLE_BQ & $FF
     LD (castling_rights), A
-.s_r3:
+.nA8:
     LD A, (move_from)
     CP SQ_H8
-    JP NZ, .s_r4
+    JP NZ, .nH8
     LD A, (castling_rights)
     AND ~CASTLE_BK & $FF
     LD (castling_rights), A
-.s_r4:
+.nH8:
 
-    ; EP square
+    ; --- Update EP square ---
     LD A, EP_NONE
     LD (ep_square), A
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 1
-    JP NZ, .s_cp
+    JP NZ, .chk_promo
     LD A, (move_from)
     LD B, A
     LD A, (move_to)
     SUB B
     CP 32
-    JP Z, .s_ew
+    JP Z, .sep_w
     CP $E0
-    JP Z, .s_eb
-    JP .s_cp
-.s_ew:
+    JP Z, .sep_b
+    JP .chk_promo
+.sep_w:
     LD A, (move_from)
     ADD A, 16
     LD (ep_square), A
-    JP .s_cp
-.s_eb:
+    JP .chk_promo
+.sep_b:
     LD A, (move_from)
     SUB 16
     LD (ep_square), A
-.s_cp:
 
-    ; Promotion
+.chk_promo:
+    ; --- Promotion (auto-queen) ---
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 1
-    JP NZ, .s_done
+    JP NZ, .mk_done
     LD A, (move_to)
     AND $70
     CP $70
-    JP Z, .s_pw
+    JP Z, .promo_w
     OR A
-    JP NZ, .s_done
+    JP NZ, .mk_done
+    ; Black pawn rank 1
     LD A, 1
     LD (IX+UNDO_DID_PROMO), A
     LD A, (move_to)
@@ -987,8 +705,8 @@ make_search_move:
     LD D, 0
     ADD HL, DE
     LD (HL), B_QUEEN
-    JP .s_done
-.s_pw:
+    JP .mk_done
+.promo_w:
     LD A, 1
     LD (IX+UNDO_DID_PROMO), A
     LD A, (move_to)
@@ -997,7 +715,8 @@ make_search_move:
     LD D, 0
     ADD HL, DE
     LD (HL), W_QUEEN
-.s_done:
+
+.mk_done:
     LD A, (undo_ptr)
     INC A
     LD (undo_ptr), A
@@ -1012,9 +731,10 @@ unmake_search_move:
     LD (undo_ptr), A
     CALL get_undo_ix
 
+    ; Undo promotion
     LD A, (IX+UNDO_DID_PROMO)
     OR A
-    JP Z, .u_np
+    JP Z, .no_up
     LD A, (IX+UNDO_TO)
     LD HL, board
     LD E, A
@@ -1022,11 +742,12 @@ unmake_search_move:
     ADD HL, DE
     LD A, (IX+UNDO_MOVING)
     LD (HL), A
-.u_np:
+.no_up:
 
+    ; Undo castling rook
     LD A, (IX+UNDO_DID_CASTLE)
     OR A
-    JP Z, .u_nc
+    JP Z, .no_uc
     LD A, (IX+UNDO_ROOK_TO)
     LD HL, board
     LD E, A
@@ -1040,19 +761,21 @@ unmake_search_move:
     ADD HL, DE
     LD A, (IX+UNDO_ROOK_PIECE)
     LD (HL), A
-.u_nc:
+.no_uc:
 
+    ; Undo EP capture
     LD A, (IX+UNDO_EP_SQ)
     OR A
-    JP Z, .u_ne
+    JP Z, .no_ue
     LD HL, board
     LD E, A
     LD D, 0
     ADD HL, DE
     LD A, (IX+UNDO_EP_PIECE)
     LD (HL), A
-.u_ne:
+.no_ue:
 
+    ; Restore pieces
     LD A, (IX+UNDO_FROM)
     LD HL, board
     LD E, A
@@ -1069,6 +792,7 @@ unmake_search_move:
     LD A, (IX+UNDO_CAPTURED)
     LD (HL), A
 
+    ; Restore state
     LD A, (IX+UNDO_EP)
     LD (ep_square), A
     LD A, (IX+UNDO_CASTLE)
@@ -1082,17 +806,20 @@ unmake_search_move:
 ; =============================================================================
 ; GET UNDO ENTRY IX POINTER
 ; =============================================================================
+; Input: A = index
+; Output: IX = undo_stack + A * 15
+; =============================================================================
 get_undo_ix:
     LD C, A
     LD B, 0
     LD L, A
     LD H, 0
-    ADD HL, HL
-    ADD HL, HL
-    ADD HL, HL
-    ADD HL, HL
+    ADD HL, HL                      ; *2
+    ADD HL, HL                      ; *4
+    ADD HL, HL                      ; *8
+    ADD HL, HL                      ; *16
     OR A
-    SBC HL, BC
+    SBC HL, BC                      ; *15
     LD DE, undo_stack
     ADD HL, DE
     PUSH HL
