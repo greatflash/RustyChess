@@ -37,6 +37,7 @@ main_loop:
     LD (illegal_flash), A
 .no_flash:
 
+    display game_over
     ; Game over?
     LD A, (game_over)
     OR A
