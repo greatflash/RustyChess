@@ -765,23 +765,22 @@ quiescence:
     ; Copy captures to depth-specific buffer
     LD HL, move_list
     LD A, (move_list_count)
-    PUSH AF                 ; Save count on stack
+    LD B, A                 ; Save count in B
     ADD A, A
     LD C, A
+    PUSH BC                 ; Save B (count) and C
     LD B, 0
     LDIR
-    POP AF                  ; Restore count
+    POP BC                  ; Restore B (count)
 
     ; Initialize loop
     ; Store count at qsrch_count + qs_depth
     LD HL, qsrch_count
-    LD D, 0
-    LD E, A                 ; E = count
     LD A, (qs_depth)
-    LD C, A
-    LD B, 0
-    ADD HL, BC
-    LD (HL), E              ; qsrch_count[qs_depth] = count
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD (HL), B              ; qsrch_count[qs_depth] = count
     LD HL, (qs_stand_pat)
     LD (qs_best), HL
     XOR A
@@ -1464,6 +1463,7 @@ qs_best:        DEFW 0
 qs_cur_idx:     DEFB 0
 qs_child_score: DEFW 0
 qs_depth:       DEFB 0
+; 6 buffers of 256 bytes each (128 moves * 2 bytes/move) = 1536 bytes total
 qsrch_moves:    DEFS MAX_MOVES * 2 * QSEARCH_MAX_DEPTH, 0
 qsrch_count:    DEFS QSEARCH_MAX_DEPTH, 0
 gc_read_idx:    DEFB 0
