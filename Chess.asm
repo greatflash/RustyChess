@@ -32,14 +32,14 @@
 ; =============================================================================
 code_end:
 
-CODE_SIZE   EQU code_end - $5C00
-MAX_SIZE    EQU $BFFF - $5C00 + 1
+CODE_SIZE   EQU code_end - $6500
+MAX_SIZE    EQU $C000 - $6500
 FREE_SPACE  EQU MAX_SIZE - CODE_SIZE
 
     DISPLAY "-------------------------------"
     DISPLAY "RUSTY CHESS - Build Report"
     DISPLAY "-------------------------------"
-    DISPLAY "Start:      $", /H, $5C00
+    DISPLAY "Start:      $", /H, $6500
     DISPLAY "End:        $", /H, code_end
     DISPLAY "Code size:  ", /D, CODE_SIZE, " bytes"
     DISPLAY "Max size:   ", /D, MAX_SIZE, " bytes"
