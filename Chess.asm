@@ -11,7 +11,7 @@
 ; =============================================================================
 
     DEVICE ZXSPECTRUMNEXT
-    ORG $6000
+    ORG $6500
 
     INCLUDE "constants.asm"
     INCLUDE "main.asm"

@@ -2,10 +2,10 @@
 ; RUSTY CHESS - AI Search (Negamax with Alpha-Beta)
 ; =============================================================================
 
-SEARCH_DEPTH    EQU 2
+SEARCH_DEPTH    EQU 1
 SCORE_INF       EQU 30000
 SCORE_MATE      EQU 20000
-QSEARCH_MAX_DEPTH EQU 6
+QSEARCH_MAX_DEPTH EQU 2
 
 UNDO_ENTRY_SIZE EQU 15
 UNDO_MAX        EQU 10
