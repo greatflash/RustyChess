@@ -532,20 +532,20 @@ negamax:
 .push_loop:
     CP B                            ; if A >= B, done
     JP Z, .stack_done
-    PUSH BC                         ; save counter
+    LD C, A                         ; save index in C
+    PUSH BC                         ; save counter and index
     LD L, A
     LD H, 0
     ADD HL, HL                      ; HL = index * 2
-    PUSH AF                         ; save index
     LD DE, move_list
     ADD HL, DE                      ; HL points to move[index]
     LD E, (HL)                      ; E = from
     INC HL
     LD D, (HL)                      ; D = to
     PUSH DE                         ; push move (from in E, to in D)
-    POP AF                          ; restore index
+    POP BC                          ; restore counter and index
+    LD A, C                         ; restore index to A
     INC A                           ; next index
-    POP BC                          ; restore counter
     JP .push_loop
 .stack_done:
 
@@ -773,20 +773,20 @@ quiescence:
 .qs_push_loop:
     CP B                            ; if A >= B, done
     JP Z, .qs_stack_done
-    PUSH BC                         ; save counter
+    LD C, A                         ; save index in C
+    PUSH BC                         ; save counter and index
     LD L, A
     LD H, 0
     ADD HL, HL                      ; HL = index * 2
-    PUSH AF                         ; save index
     LD DE, move_list
     ADD HL, DE                      ; HL points to move[index]
     LD E, (HL)                      ; E = from
     INC HL
     LD D, (HL)                      ; D = to
     PUSH DE                         ; push move (from in E, to in D)
-    POP AF                          ; restore index
+    POP BC                          ; restore counter and index
+    LD A, C                         ; restore index to A
     INC A                           ; next index
-    POP BC                          ; restore counter
     JP .qs_push_loop
 .qs_stack_done:
 
