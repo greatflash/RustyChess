@@ -524,16 +524,17 @@ negamax:
     OR A
     JP Z, .no_moves
 
-    ; Save move list on stack: first push all moves, then push count
+    ; Save move list on stack: first push all moves
     LD A, (move_list_count)
     LD (node_saved_count), A        ; save count to temp variable
     LD B, A                         ; B = move count
+    OR A
+    JP Z, .stack_done               ; if no moves, skip
     XOR A                           ; A = 0 (start index)
 .push_loop:
     CP B                            ; if A >= B, done
     JP Z, .stack_done
     LD C, A                         ; save index in C
-    PUSH BC                         ; save counter and index
     LD L, A
     LD H, 0
     ADD HL, HL                      ; HL = index * 2
@@ -543,8 +544,7 @@ negamax:
     INC HL
     LD D, (HL)                      ; D = to
     PUSH DE                         ; push move (from in E, to in D)
-    POP BC                          ; restore counter and index
-    LD A, C                         ; restore index to A
+    LD A, C                         ; restore index from C
     INC A                           ; next index
     JP .push_loop
 .stack_done:
@@ -769,12 +769,13 @@ quiescence:
     LD A, (move_list_count)
     LD (qs_saved_count), A          ; save count to temp variable
     LD B, A                         ; B = move count
+    OR A
+    JP Z, .qs_stack_done            ; if no moves, skip
     XOR A                           ; A = 0 (start index)
 .qs_push_loop:
     CP B                            ; if A >= B, done
     JP Z, .qs_stack_done
     LD C, A                         ; save index in C
-    PUSH BC                         ; save counter and index
     LD L, A
     LD H, 0
     ADD HL, HL                      ; HL = index * 2
@@ -784,8 +785,7 @@ quiescence:
     INC HL
     LD D, (HL)                      ; D = to
     PUSH DE                         ; push move (from in E, to in D)
-    POP BC                          ; restore counter and index
-    LD A, C                         ; restore index to A
+    LD A, C                         ; restore index from C
     INC A                           ; next index
     JP .qs_push_loop
 .qs_stack_done:
