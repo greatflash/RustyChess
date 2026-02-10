@@ -1334,11 +1334,13 @@ make_search_move:
     AND PIECE_MASK
     CP 1
     JP NZ, .s_done
+    LD A, (IX+UNDO_MOVING)
+    AND COLOR_MASK
+    JP NZ, .s_bpromo
+    ; White pawn - check if reaching rank 8
     LD A, (move_to)
     AND $70
     CP $70
-    JP NZ, .s_no_promo
-    OR A
     JP NZ, .s_done
     LD A, 1
     LD (IX+UNDO_DID_PROMO), A
@@ -1348,14 +1350,15 @@ make_search_move:
     LD D, 0
     ADD HL, DE
     LD (HL), W_QUEEN
-    JP .s_no_promo
-.s_no_promo:
+    JP .s_done
+.s_bpromo:
+    ; Black pawn - check if reaching rank 1
     LD A, (move_to)
     AND $F0
     CP $00
-    JP NZ, .ai_no_promo
+    JP NZ, .s_done
     LD A, 1
-    LD (did_promote), A
+    LD (IX+UNDO_DID_PROMO), A
     LD A, (move_to)
     LD HL, board
     LD E, A
