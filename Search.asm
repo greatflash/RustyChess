@@ -1339,7 +1339,7 @@ make_search_move:
     JP NZ, .s_bpromo
     ; White pawn - check if reaching rank 8
     LD A, (move_to)
-    AND $70
+    AND $F0
     CP $70
     JP NZ, .s_done
     LD A, 1
