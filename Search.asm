@@ -516,7 +516,7 @@ ai_tie_counter:    DEFB 0
 negamax:
     LD A, (search_depth)
     OR A
-    JP Z, evaluate
+    JP Z, quiescence
 
     CALL generate_moves
 
@@ -524,72 +524,61 @@ negamax:
     OR A
     JP Z, .no_moves
 
-    ; Copy to depth buffer
-    LD A, (search_depth)
-    CP 2
-    JP Z, .copy_d2
-    LD HL, move_list
-    LD DE, srch_moves_2
+    ; Save move list on stack: first push all moves, then push count
     LD A, (move_list_count)
-    LD (srch_count_2), A
-    ADD A, A
-    LD C, A
-    LD B, 0
-    LDIR
-    JP .search_init
-.copy_d2:
-    LD HL, move_list
-    LD DE, srch_moves_1
-    LD A, (move_list_count)
-    LD (srch_count_1), A
-    ADD A, A
-    LD C, A
-    LD B, 0
-    LDIR
+    LD (node_saved_count), A        ; save count to temp variable
+    LD B, A                         ; B = move count
+    XOR A                           ; A = 0 (start index)
+.push_loop:
+    CP B                            ; if A >= B, done
+    JP Z, .stack_done
+    PUSH BC                         ; save counter
+    LD L, A
+    LD H, 0
+    ADD HL, HL                      ; HL = index * 2
+    PUSH AF                         ; save index
+    LD DE, move_list
+    ADD HL, DE                      ; HL points to move[index]
+    LD E, (HL)                      ; E = from
+    INC HL
+    LD D, (HL)                      ; D = to
+    PUSH DE                         ; push move (from in E, to in D)
+    POP AF                          ; restore index
+    INC A                           ; next index
+    POP BC                          ; restore counter
+    JP .push_loop
+.stack_done:
 
-.search_init:
     LD HL, -SCORE_INF
     LD (node_best), HL
     XOR A
     LD (node_cur_idx), A
 
 .move_loop:
-    LD A, (search_depth)
-    CP 2
-    JP Z, .cnt_d2
-    LD A, (srch_count_2)
-    JP .got_cnt
-.cnt_d2:
-    LD A, (srch_count_1)
-.got_cnt:
+    LD A, (node_cur_idx)
     LD B, A
-    LD A, (node_cur_idx)
+    LD A, (node_saved_count)
     CP B
-    JP NC, .moves_done
+    JP Z, .moves_done
+    JP C, .moves_done
 
-    ; Get move
-    LD A, (search_depth)
-    CP 2
-    JP Z, .mov_d2
+    ; Get move from stack without popping
+    ; Moves are at SP + 0, SP + 2, ... SP + (count-1)*2
+    ; We want move at index node_cur_idx
     LD A, (node_cur_idx)
     LD L, A
     LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_2
-    ADD HL, DE
-    JP .got_mov
-.mov_d2:
-    LD A, (node_cur_idx)
-    LD L, A
-    LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_1
-    ADD HL, DE
-.got_mov:
-    LD A, (HL)
-    LD (move_from), A
+    ADD HL, HL                      ; HL = index * 2
+    EX DE, HL                       ; DE = offset
+    LD HL, 0
+    ADD HL, SP                      ; HL = SP
+    ADD HL, DE                      ; HL = SP + offset
+    LD E, (HL)                      ; E = from
     INC HL
-    LD A, (HL)
+    LD D, (HL)                      ; D = to
+    LD A, E
+    LD (move_from), A
+    LD A, D
     LD (move_to), A
 
     CALL make_search_move
@@ -689,6 +678,15 @@ negamax:
     LD DE, (search_beta)
     CALL signed_compare_hl_de
     JP C, .no_improve
+    ; Pop move list from stack before returning
+    LD A, (node_saved_count)
+    ADD A, A                        ; A = count * 2 (bytes to pop)
+    LD E, A
+    LD D, 0
+    LD HL, 0
+    ADD HL, SP
+    ADD HL, DE
+    LD SP, HL                       ; adjust SP to pop moves
     LD HL, (node_best)
     RET
 
@@ -699,6 +697,15 @@ negamax:
     JP .move_loop
 
 .moves_done:
+    ; Pop move list from stack
+    LD A, (node_saved_count)
+    ADD A, A                        ; A = count * 2 (bytes to pop)
+    LD E, A
+    LD D, 0
+    LD HL, 0
+    ADD HL, SP
+    ADD HL, DE
+    LD SP, HL                       ; adjust SP to pop moves
     LD HL, (node_best)
     RET
 
@@ -722,9 +729,7 @@ negamax:
     RET
 
 ; =============================================================================
-; QUIESCENCE SEARCH (currently disabled - called nowhere)
-; Re-enable by changing JP Z, evaluate back to JP Z, quiescence
-; in negamax above, once generate_moves is made re-entrant.
+; QUIESCENCE SEARCH
 ; =============================================================================
 quiescence:
     ; Stand pat evaluation
@@ -760,85 +765,59 @@ quiescence:
     OR A
     JP Z, .qs_return_stand_pat
 
-    ; Calculate buffer offset based on qs_depth
-    ; qsrch_moves + (qs_depth * MAX_MOVES * 2)
-    LD A, (qs_depth)
+    ; Save move list on stack: push all moves
+    LD A, (move_list_count)
+    LD (qs_saved_count), A          ; save count to temp variable
+    LD B, A                         ; B = move count
+    XOR A                           ; A = 0 (start index)
+.qs_push_loop:
+    CP B                            ; if A >= B, done
+    JP Z, .qs_stack_done
+    PUSH BC                         ; save counter
     LD L, A
     LD H, 0
-    ADD HL, HL              ; * 2
-    ADD HL, HL              ; * 4
-    ADD HL, HL              ; * 8
-    ADD HL, HL              ; * 16
-    ADD HL, HL              ; * 32
-    ADD HL, HL              ; * 64
-    ADD HL, HL              ; * 128
-    ADD HL, HL              ; * 256 (MAX_MOVES * 2)
-    LD DE, qsrch_moves
-    ADD HL, DE
-    EX DE, HL               ; DE now points to depth-specific buffer
+    ADD HL, HL                      ; HL = index * 2
+    PUSH AF                         ; save index
+    LD DE, move_list
+    ADD HL, DE                      ; HL points to move[index]
+    LD E, (HL)                      ; E = from
+    INC HL
+    LD D, (HL)                      ; D = to
+    PUSH DE                         ; push move (from in E, to in D)
+    POP AF                          ; restore index
+    INC A                           ; next index
+    POP BC                          ; restore counter
+    JP .qs_push_loop
+.qs_stack_done:
 
-    ; Copy captures to depth-specific buffer
-    LD HL, move_list
-    LD A, (move_list_count)
-    LD B, A                 ; Save count in B
-    ADD A, A
-    LD C, A
-    PUSH BC                 ; Save B (count) and C
-    LD B, 0
-    LDIR
-    POP BC                  ; Restore B (count)
-
-    ; Initialize loop
-    ; Store count at qsrch_count + qs_depth
-    LD HL, qsrch_count
-    LD A, (qs_depth)
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD (HL), B              ; qsrch_count[qs_depth] = count
     LD HL, (qs_stand_pat)
     LD (qs_best), HL
     XOR A
     LD (qs_cur_idx), A
 
 .qs_move_loop:
-    ; Get count from qsrch_count[qs_depth]
-    LD HL, qsrch_count
-    LD A, (qs_depth)
-    LD C, A
-    LD B, 0
-    ADD HL, BC
-    LD B, (HL)              ; B = qsrch_count[qs_depth]
     LD A, (qs_cur_idx)
+    LD B, A
+    LD A, (qs_saved_count)
     CP B
     JP Z, .qs_moves_done
-    JP NC, .qs_moves_done
+    JP C, .qs_moves_done
 
-    ; Calculate buffer offset for this depth
-    LD A, (qs_depth)
+    ; Get move from stack without popping
+    LD A, (qs_cur_idx)
     LD L, A
     LD H, 0
-    ADD HL, HL              ; * 2
-    ADD HL, HL              ; * 4
-    ADD HL, HL              ; * 8
-    ADD HL, HL              ; * 16
-    ADD HL, HL              ; * 32
-    ADD HL, HL              ; * 64
-    ADD HL, HL              ; * 128
-    ADD HL, HL              ; * 256
-    LD DE, qsrch_moves
-    ADD HL, DE
-
-    ; Get move from depth-specific buffer
-    LD A, (qs_cur_idx)
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    ADD HL, DE              ; HL now points to move in buffer
-    LD A, (HL)
-    LD (move_from), A
+    ADD HL, HL                      ; HL = index * 2
+    EX DE, HL                       ; DE = offset
+    LD HL, 0
+    ADD HL, SP                      ; HL = SP
+    ADD HL, DE                      ; HL = SP + offset
+    LD E, (HL)                      ; E = from
     INC HL
-    LD A, (HL)
+    LD D, (HL)                      ; D = to
+    LD A, E
+    LD (move_from), A
+    LD A, D
     LD (move_to), A
 
     CALL make_search_move
@@ -942,7 +921,15 @@ quiescence:
     LD DE, (search_beta)
     CALL signed_compare_hl_de
     JP C, .qs_no_improve
-    ; alpha >= beta, cutoff
+    ; alpha >= beta, cutoff - pop move list before returning
+    LD A, (qs_saved_count)
+    ADD A, A                        ; A = count * 2 (bytes to pop)
+    LD E, A
+    LD D, 0
+    LD HL, 0
+    ADD HL, SP
+    ADD HL, DE
+    LD SP, HL                       ; adjust SP to pop moves
     LD HL, (qs_best)
     RET
 
@@ -953,6 +940,15 @@ quiescence:
     JP .qs_move_loop
 
 .qs_moves_done:
+    ; Pop move list from stack
+    LD A, (qs_saved_count)
+    ADD A, A                        ; A = count * 2 (bytes to pop)
+    LD E, A
+    LD D, 0
+    LD HL, 0
+    ADD HL, SP
+    ADD HL, DE
+    LD SP, HL                       ; adjust SP to pop moves
     LD HL, (qs_best)
     RET
 
@@ -1072,6 +1068,7 @@ search_beta:        DEFW 0
 node_best:          DEFW 0
 node_cur_idx:       DEFB 0
 node_child_score:   DEFW 0
+node_saved_count:   DEFB 0
 
 ; =============================================================================
 ; SIGNED 16-BIT COMPARE
@@ -1472,19 +1469,13 @@ get_undo_ix:
 ; =============================================================================
 undo_ptr:       DEFB 0
 undo_stack:     DEFS UNDO_ENTRY_SIZE * UNDO_MAX, 0
-srch_moves_1:   DEFS MAX_MOVES * 2, 0
-srch_count_1:   DEFB 0
-srch_moves_2:   DEFS MAX_MOVES * 2, 0
-srch_count_2:   DEFB 0
 
-; Quiescence search data (kept for future use)
+; Quiescence search data
 qs_stand_pat:   DEFW 0
 qs_best:        DEFW 0
 qs_cur_idx:     DEFB 0
 qs_child_score: DEFW 0
 qs_depth:       DEFB 0
-; 2 buffers of 256 bytes each (128 moves * 2 bytes/move) = 512 bytes total
-qsrch_moves:    DEFS MAX_MOVES * 2 * QSEARCH_MAX_DEPTH, 0
-qsrch_count:    DEFS QSEARCH_MAX_DEPTH, 0
+qs_saved_count: DEFB 0
 gc_read_idx:    DEFB 0
 gc_write_idx:   DEFB 0
