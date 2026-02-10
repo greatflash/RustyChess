@@ -991,14 +991,14 @@ generate_captures:
     JP NZ, .gc_is_capture
 
     ; Check for en passant capture
-    ; Is moving piece a pawn?
+    ; Is moving piece a pawn? (piece type 1)
     LD HL, board
     LD E, B
     LD D, 0
     ADD HL, DE
     LD A, (HL)
     AND PIECE_MASK
-    CP 1
+    CP 1                            ; 1 = pawn
     JP NZ, .gc_not_capture
 
     ; Is to_sq == ep_square?
@@ -1029,13 +1029,11 @@ generate_captures:
     LD L, A
     LD H, 0
     ADD HL, HL
-    PUSH HL
-    LD HL, move_list
-    POP BC
-    ADD HL, BC
-    LD (HL), D                      ; from_sq
+    LD BC, move_list
+    ADD HL, BC              ; HL now points to write position
+    LD (HL), D              ; from_sq
     INC HL
-    LD (HL), E                      ; to_sq
+    LD (HL), E              ; to_sq
 
     LD A, (gc_write_idx)
     INC A
