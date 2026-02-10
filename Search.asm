@@ -5,6 +5,7 @@
 SEARCH_DEPTH    EQU 2
 SCORE_INF       EQU 30000
 SCORE_MATE      EQU 20000
+QSEARCH_MAX_DEPTH EQU 6
 
 UNDO_ENTRY_SIZE EQU 15
 UNDO_MAX        EQU 10
@@ -744,37 +745,82 @@ quiescence:
     OR A
     JP Z, .qs_return_stand_pat
 
-    ; Copy captures to qsrch_moves buffer
-    LD HL, move_list
+    ; Calculate buffer offset based on qs_depth
+    ; qsrch_moves + (qs_depth * MAX_MOVES * 2)
+    LD A, (qs_depth)
+    LD L, A
+    LD H, 0
+    ADD HL, HL              ; * 2
+    ADD HL, HL              ; * 4
+    ADD HL, HL              ; * 8
+    ADD HL, HL              ; * 16
+    ADD HL, HL              ; * 32
+    ADD HL, HL              ; * 64
+    ADD HL, HL              ; * 128
+    ADD HL, HL              ; * 256 (MAX_MOVES * 2)
     LD DE, qsrch_moves
+    ADD HL, DE
+    EX DE, HL               ; DE now points to depth-specific buffer
+
+    ; Copy captures to depth-specific buffer
+    LD HL, move_list
     LD A, (move_list_count)
-    LD (qsrch_count), A
+    PUSH AF                 ; Save count on stack
     ADD A, A
     LD C, A
     LD B, 0
     LDIR
+    POP AF                  ; Restore count
 
     ; Initialize loop
+    ; Store count at qsrch_count + qs_depth
+    LD HL, qsrch_count
+    LD D, 0
+    LD E, A                 ; E = count
+    LD A, (qs_depth)
+    LD C, A
+    LD B, 0
+    ADD HL, BC
+    LD (HL), E              ; qsrch_count[qs_depth] = count
     LD HL, (qs_stand_pat)
     LD (qs_best), HL
     XOR A
     LD (qs_cur_idx), A
 
 .qs_move_loop:
+    ; Get count from qsrch_count[qs_depth]
+    LD HL, qsrch_count
+    LD A, (qs_depth)
+    LD C, A
+    LD B, 0
+    ADD HL, BC
+    LD B, (HL)              ; B = qsrch_count[qs_depth]
     LD A, (qs_cur_idx)
-    LD B, A
-    LD A, (qsrch_count)
     CP B
     JP Z, .qs_moves_done
-    JP C, .qs_moves_done
+    JP NC, .qs_moves_done
 
-    ; Get move
-    LD A, (qs_cur_idx)
+    ; Calculate buffer offset for this depth
+    LD A, (qs_depth)
     LD L, A
     LD H, 0
-    ADD HL, HL
+    ADD HL, HL              ; * 2
+    ADD HL, HL              ; * 4
+    ADD HL, HL              ; * 8
+    ADD HL, HL              ; * 16
+    ADD HL, HL              ; * 32
+    ADD HL, HL              ; * 64
+    ADD HL, HL              ; * 128
+    ADD HL, HL              ; * 256
     LD DE, qsrch_moves
     ADD HL, DE
+
+    ; Get move from depth-specific buffer
+    LD A, (qs_cur_idx)
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    ADD HL, DE              ; HL now points to move in buffer
     LD A, (HL)
     LD (move_from), A
     INC HL
@@ -1405,8 +1451,6 @@ get_undo_ix:
 ; =============================================================================
 ; DATA
 ; =============================================================================
-QSEARCH_MAX_DEPTH EQU 6
-
 undo_ptr:       DEFB 0
 undo_stack:     DEFS UNDO_ENTRY_SIZE * UNDO_MAX, 0
 srch_moves_1:   DEFS MAX_MOVES * 2, 0
@@ -1420,7 +1464,7 @@ qs_best:        DEFW 0
 qs_cur_idx:     DEFB 0
 qs_child_score: DEFW 0
 qs_depth:       DEFB 0
-qsrch_moves:    DEFS MAX_MOVES * 2, 0
-qsrch_count:    DEFB 0
+qsrch_moves:    DEFS MAX_MOVES * 2 * QSEARCH_MAX_DEPTH, 0
+qsrch_count:    DEFS QSEARCH_MAX_DEPTH, 0
 gc_read_idx:    DEFB 0
 gc_write_idx:   DEFB 0
