@@ -5,7 +5,7 @@
 SEARCH_DEPTH    EQU 2
 SCORE_INF       EQU 30000
 SCORE_MATE      EQU 20000
-QSEARCH_MAX_DEPTH EQU 6
+QSEARCH_MAX_DEPTH EQU 2
 
 UNDO_ENTRY_SIZE EQU 15
 UNDO_MAX        EQU 10
@@ -719,8 +719,7 @@ quiescence:
     LD DE, (search_beta)
     CALL signed_compare_hl_de
     JP C, .qs_no_beta_cut
-    JP Z, .qs_no_beta_cut
-    ; stand_pat >= beta, cutoff
+    ; stand_pat >= beta (not carry means >=), cutoff
     LD HL, (qs_stand_pat)
     RET
 
@@ -1461,7 +1460,7 @@ qs_best:        DEFW 0
 qs_cur_idx:     DEFB 0
 qs_child_score: DEFW 0
 qs_depth:       DEFB 0
-; 6 buffers of 256 bytes each (128 moves * 2 bytes/move) = 1536 bytes total
+; 2 buffers of 256 bytes each (128 moves * 2 bytes/move) = 512 bytes total
 qsrch_moves:    DEFS MAX_MOVES * 2 * QSEARCH_MAX_DEPTH, 0
 qsrch_count:    DEFS QSEARCH_MAX_DEPTH, 0
 gc_read_idx:    DEFB 0
