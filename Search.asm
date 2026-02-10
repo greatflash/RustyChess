@@ -501,7 +501,7 @@ ai_move:
 
     RET
 
-aio_root_moves:     DEFS MAX_MOVES * 2, 0
+aï_root_moves:     DEFS MAX_MOVES * 2, 0
 ai_root_count:     DEFB 0
 ai_best_score:     DEFW 0
 ai_best_idx:       DEFB 0
@@ -1152,173 +1152,42 @@ make_search_move:
     AND PIECE_MASK
     CP 6
     JP NZ, .s_nk
-
     LD A, (IX+UNDO_MOVING)
     AND COLOR_MASK
     JP NZ, .s_bk
-
     LD A, (move_to)
     LD (white_king_sq), A
-    LD A, (castling_rights)
-    AND ~CASTLE_W_ALL & $FF
-    LD (castling_rights), A
-
-    LD A, (move_from)
-    LD B, A
-    LD A, (move_to)
-    SUB B
-    CP 2
-    JP Z, .ai_wk_castle
-    CP $FE
-    JP Z, .ai_wq_castle
-    JP .ai_not_king
-
-.ai_wk_castle:
-    LD A, 1
-    LD (did_castle), A
-    LD A, (board + SQ_H1)
-    LD (save_castle_rook), A
-    LD (board + SQ_F1), A
-    LD A, EMPTY
-    LD (board + SQ_H1), A
-    JP .ai_not_king
-
-.ai_wq_castle:
-    LD A, 1
-    LD (did_castle), A
-    LD A, (board + SQ_A1)
-    LD (save_castle_rook), A
-    LD (board + SQ_D1), A
-    LD A, EMPTY
-    LD (board + SQ_A1), A
-    JP .ai_not_king
-
-.ai_bking:
+    JP .s_nk
+.s_bk:
     LD A, (move_to)
     LD (black_king_sq), A
-    LD A, (castling_rights)
-    AND ~CASTLE_B_ALL & $FF
-    LD (castling_rights), A
+.s_nk:
 
-    LD A, (move_from)
-    LD B, A
-    LD A, (move_to)
-    SUB B
-    CP 2
-    JP Z, .ai_bk_castle
-    CP $FE
-    JP Z, .ai_bq_castle
-    JP .ai_not_king
-
-.ai_bk_castle:
-    LD A, 1
-    LD (did_castle), A
-    LD A, (board + SQ_H8)
-    LD (save_castle_rook), A
-    LD (board + SQ_F8), A
-    LD A, EMPTY
-    LD (board + SQ_H8), A
-    JP .ai_not_king
-
-.ai_bq_castle:
-    LD A, 1
-    LD (did_castle), A
-    LD A, (board + SQ_A8)
-    LD (save_castle_rook), A
-    LD (board + SQ_D8), A
-    LD A, EMPTY
-    LD (board + SQ_A8), A
-
-.ai_not_king:
-    ; --- Rook move castling rights ---
-    LD A, (IX+UNDO_MOVING)
-    AND PIECE_MASK
-    CP 4
-    JP NZ, .ai_not_rook
-    LD A, (move_from)
-    CP SQ_A1
-    JP NZ, .ai_nr1
-    LD A, (castling_rights)
-    AND ~CASTLE_WQ & $FF
-    LD (castling_rights), A
-.ai_nr1:
-    LD A, (move_from)
-    CP SQ_H1
-    JP NZ, .ai_nr2
-    LD A, (castling_rights)
-    AND ~CASTLE_WK & $FF
-    LD (castling_rights), A
-.ai_nr2:
-    LD A, (move_from)
-    CP SQ_A8
-    JP NZ, .ai_nr3
-    LD A, (castling_rights)
-    AND ~CASTLE_BQ & $FF
-    LD (castling_rights), A
-.ai_nr3:
-    LD A, (move_from)
-    CP SQ_H8
-    JP NZ, .ai_not_rook
-    LD A, (castling_rights)
-    AND ~CASTLE_BK & $FF
-    LD (castling_rights), A
-.ai_not_rook:
-
-    ; --- Rook capture castling rights ---
-    LD A, (move_to)
-    CP SQ_A1
-    JP NZ, .ai_nc1
-    LD A, (castling_rights)
-    AND ~CASTLE_WQ & $FF
-    LD (castling_rights), A
-.ai_nc1:
-    LD A, (move_to)
-    CP SQ_H1
-    JP NZ, .ai_nc2
-    LD A, (castling_rights)
-    AND ~CASTLE_WK & $FF
-    LD (castling_rights), A
-.ai_nc2:
-    LD A, (move_to)
-    CP SQ_A8
-    JP NZ, .ai_nc3
-    LD A, (castling_rights)
-    AND ~CASTLE_BQ & $FF
-    LD (castling_rights), A
-.ai_nc3:
-    LD A, (move_to)
-    CP SQ_H8
-    JP NZ, .ai_nc4
-    LD A, (castling_rights)
-    AND ~CASTLE_BK & $FF
-    LD (castling_rights), A
-.ai_nc4:
-
-    ; --- En passant capture ---
+    ; EP capture
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 1
-    JP NZ, .ai_not_ep
+    JP NZ, .s_nep
     LD A, (ep_square)
     CP EP_NONE
-    JP Z, .ai_not_ep
+    JP Z, .s_nep
     LD B, A
     LD A, (move_to)
     CP B
-    JP NZ, .ai_not_ep
+    JP NZ, .s_nep
 
     LD A, 1
     LD (did_ep_capture), A
-    LD A, (IX+UNDO_MOVING)
+    LD A, (moving_piece)
     AND COLOR_MASK
-    JP NZ, .ai_ep_black
+    JP NZ, .s_epb
     LD A, (move_to)
     SUB 16
-    JP .ai_ep_rem
-.ai_ep_black:
+    JP .s_epd
+.s_epb:
     LD A, (move_to)
     ADD A, 16
-.ai_ep_rem:
+.s_epd:
     LD (ep_capture_sq), A
     LD HL, board
     LD E, A
@@ -1327,47 +1196,153 @@ make_search_move:
     LD A, (HL)
     LD (save_ep_captured), A
     LD (HL), EMPTY
+.s_nep:
 
-.ai_not_ep:
-    ; --- Update EP square ---
+    ; Castling rook
+    LD A, (IX+UNDO_MOVING)
+    AND PIECE_MASK
+    CP 6
+    JP NZ, .s_nc
+    LD A, (move_from)
+    LD B, A
+    LD A, (move_to)
+    SUB B
+    CP 2
+    JP Z, .s_ksc
+    CP $FE
+    JP Z, .s_qsc
+    JP .s_nc
+.s_ksc:
+    LD A, 1
+    LD (IX+UNDO_DID_CASTLE), A
+    LD A, (move_from)
+    ADD A, 3
+    LD (IX+UNDO_ROOK_FROM), A
+    LD HL, board
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD A, (HL)
+    LD (IX+UNDO_ROOK_PIECE), A
+    LD (HL), EMPTY
+    LD A, (move_from)
+    ADD A, 1
+    LD (IX+UNDO_ROOK_TO), A
+    LD HL, board
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD A, (IX+UNDO_ROOK_PIECE)
+    LD (HL), A
+    JP .s_nc
+.s_qsc:
+    LD A, 1
+    LD (IX+UNDO_DID_CASTLE), A
+    LD A, (move_from)
+    SUB 4
+    LD (IX+UNDO_ROOK_FROM), A
+    LD HL, board
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD A, (HL)
+    LD (IX+UNDO_ROOK_PIECE), A
+    LD (HL), EMPTY
+    LD A, (move_from)
+    SUB 1
+    LD (IX+UNDO_ROOK_TO), A
+    LD HL, board
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD A, (IX+UNDO_ROOK_PIECE)
+    LD (HL), A
+.s_nc:
+
+    ; Castling rights
+    LD A, (IX+UNDO_MOVING)
+    AND PIECE_MASK
+    CP 6
+    JP NZ, .s_cr
+    LD A, (IX+UNDO_MOVING)
+    AND COLOR_MASK
+    JP NZ, .s_bcl
+    LD A, (castling_rights)
+    AND ~CASTLE_W_ALL & $FF
+    LD (castling_rights), A
+    JP .s_cr
+.s_bcl:
+    LD A, (castling_rights)
+    AND ~CASTLE_B_ALL & $FF
+    LD (castling_rights), A
+.s_cr:
+    LD A, (move_from)
+    CP SQ_A1
+    JP NZ, .s_r1
+    LD A, (castling_rights)
+    AND ~CASTLE_WQ & $FF
+    LD (castling_rights), A
+.s_r1:
+    LD A, (move_from)
+    CP SQ_H1
+    JP NZ, .s_r2
+    LD A, (castling_rights)
+    AND ~CASTLE_WK & $FF
+    LD (castling_rights), A
+.s_r2:
+    LD A, (move_from)
+    CP SQ_A8
+    JP NZ, .s_r3
+    LD A, (castling_rights)
+    AND ~CASTLE_BQ & $FF
+    LD (castling_rights), A
+.s_r3:
+    LD A, (move_from)
+    CP SQ_H8
+    JP NZ, .s_r4
+    LD A, (castling_rights)
+    AND ~CASTLE_BK & $FF
+    LD (castling_rights), A
+.s_r4:
+
+    ; EP square
     LD A, EP_NONE
     LD (ep_square), A
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 1
-    JP NZ, .ai_no_double
+    JP NZ, .s_cp
     LD A, (move_from)
     LD B, A
     LD A, (move_to)
     SUB B
     CP 32
-    JP Z, .ai_ep_w
+    JP Z, .s_ew
     CP $E0
-    JP Z, .ai_ep_b
-    JP .ai_no_double
-.ai_ep_w:
+    JP Z, .s_eb
+    JP .s_cp
+.s_ew:
     LD A, (move_from)
     ADD A, 16
     LD (ep_square), A
-    JP .ai_no_double
-.ai_ep_b:
+    JP .s_cp
+.s_eb:
     LD A, (move_from)
     SUB 16
     LD (ep_square), A
-.ai_no_double:
+.s_cp:
 
-    ; --- Promotion ---
+    ; Promotion
     LD A, (IX+UNDO_MOVING)
     AND PIECE_MASK
     CP 1
-    JP NZ, .ai_no_promo
-    LD A, (IX+UNDO_MOVING)
-    AND COLOR_MASK
-    JP NZ, .ai_bpromo
+    JP NZ, .s_done
     LD A, (move_to)
-    AND $F0
+    AND $70
     CP $70
-    JP NZ, .ai_no_promo
+    JP NZ, .s_no_promo
+    OR A
+    JP NZ, .s_done
     LD A, 1
     LD (IX+UNDO_DID_PROMO), A
     LD A, (move_to)
@@ -1376,43 +1351,24 @@ make_search_move:
     LD D, 0
     ADD HL, DE
     LD (HL), W_QUEEN
-    JP .ai_no_promo
-.ai_bpromo:
+    JP .s_no_promo
+.s_no_promo:
     LD A, (move_to)
     AND $F0
     CP $00
     JP NZ, .ai_no_promo
     LD A, 1
-    LD (IX+UNDO_DID_PROMO), A
+    LD (did_promote), A
     LD A, (move_to)
     LD HL, board
     LD E, A
     LD D, 0
     ADD HL, DE
     LD (HL), B_QUEEN
-.ai_no_promo:
-
-    ; --- Record capture ---
-    LD A, (save_to_piece)
-    CALL record_capture
-    LD A, (did_ep_capture)
-    OR A
-    JP Z, .ai_no_ep_rec
-    LD A, (save_ep_captured)
-    CALL record_capture
-.ai_no_ep_rec:
-
-    ; Record move in history
-    CALL record_move
-
-    ; Switch side to white
-    LD A, (side_to_move)
-    XOR COLOR_MASK
-    LD (side_to_move), A
-
-    ; Check for game end
-    CALL check_game_end
-
+.s_done:
+    LD A, (undo_ptr)
+    INC A
+    LD (undo_ptr), A
     RET
 
 ; =============================================================================
