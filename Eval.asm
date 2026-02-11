@@ -387,6 +387,17 @@ get_positional_bonus:
 ; --- Knight bonuses ---
 .knight_bonus:
     ; Knights are better in the centre
+    ; Penalty for starting squares (encourage development)
+    LD A, (eval_cur_sq)
+    CP SQ_B1                        ; White knight on b1?
+    JP Z, .knight_starting
+    CP SQ_G1                        ; White knight on g1?
+    JP Z, .knight_starting
+    CP SQ_B8                        ; Black knight on b8?
+    JP Z, .knight_starting
+    CP SQ_G8                        ; Black knight on g8?
+    JP Z, .knight_starting
+    
     ; Penalty for edge squares
     LD HL, 0
 
@@ -424,6 +435,10 @@ get_positional_bonus:
 
 .knight_no_centre:
     LD HL, 0
+    RET
+    
+.knight_starting:
+    LD HL, -15                      ; Starting square penalty
     RET
 
 .knight_edge:
@@ -491,6 +506,39 @@ get_positional_bonus:
 ; --- Rook bonuses ---
 ; These bonuses are always active and help evaluate rook positioning
 .rook_bonus:
+    ; Initialize bonus accumulator
+    LD HL, 0
+    PUSH HL                         ; Save initial bonus on stack
+    
+    ; Check for 7th rank bonus
+    LD A, (eval_cur_sq)
+    AND $70                         ; Get rank
+    LD B, A
+    LD A, (eval_piece)
+    AND COLOR_MASK
+    JP NZ, .rook_check_black_7th
+    
+    ; White rook - check if on rank 7 ($60)
+    LD A, B
+    CP $60
+    JP NZ, .rook_check_file
+    POP HL                          ; Get current bonus
+    LD DE, 10
+    ADD HL, DE                      ; Add 7th rank bonus
+    PUSH HL
+    JP .rook_check_file
+    
+.rook_check_black_7th:
+    ; Black rook - check if on rank 2 ($10)
+    LD A, B
+    CP $10
+    JP NZ, .rook_check_file
+    POP HL                          ; Get current bonus
+    LD DE, 10
+    ADD HL, DE                      ; Add 7th rank bonus
+    PUSH HL
+    
+.rook_check_file:
     ; Check for open/semi-open file
     ; Get file of rook
     LD A, (eval_cur_sq)
@@ -560,24 +608,32 @@ get_positional_bonus:
     POP BC
     DJNZ .rook_file_scan
     
-    ; Determine bonus
+    ; Determine file bonus and add to total
+    POP HL                          ; Get accumulated bonus (7th rank if any)
+    PUSH HL                         ; Save it again
+    
     LD A, (eval_rook_has_friendly_pawn)
     OR A
-    JP NZ, .rook_closed             ; Has friendly pawn = closed file
+    JP NZ, .rook_file_closed        ; Has friendly pawn = closed file
     
     LD A, (eval_rook_has_any_pawn)
     OR A
-    JP NZ, .rook_semi_open
+    JP NZ, .rook_file_semi_open
     
-    ; No pawns on file = open file
-    LD HL, 15
+    ; No pawns on file = open file (+15)
+    POP HL
+    LD DE, 15
+    ADD HL, DE
     RET
     
-.rook_semi_open:
-    ; No friendly pawns but enemy pawn = semi-open
-    LD HL, 10
+.rook_file_semi_open:
+    ; No friendly pawns but enemy pawn = semi-open (+10)
+    POP HL
+    LD DE, 10
+    ADD HL, DE
     RET
     
-.rook_closed:
-    LD HL, 0
+.rook_file_closed:
+    ; Closed file (+0)
+    POP HL
     RET
