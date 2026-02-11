@@ -1013,7 +1013,6 @@ sort_d1_moves:
 .sd1_sort_outer:
     XOR A
     LD (sort_swapped), A
-    XOR A
     LD (order_idx), A
     
 .sd1_sort_inner:
@@ -1163,7 +1162,6 @@ sort_d2_moves:
 .sd2_sort_outer:
     XOR A
     LD (sort_swapped), A
-    XOR A
     LD (order_idx), A
     
 .sd2_sort_inner:
@@ -1309,7 +1307,6 @@ sort_d3_moves:
 .sd3_sort_outer:
     XOR A
     LD (sort_swapped), A
-    XOR A
     LD (order_idx), A
     
 .sd3_sort_inner:
