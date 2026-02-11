@@ -65,7 +65,7 @@ ai_move:
     ; Score each move: captures get victim_type * 7 - attacker_type
     ; Non-captures get 0
     ; Multiplier 7 ensures captures always score higher than non-captures
-    ; since max piece type is 6, and victim_type * 7 > attacker_type always
+    ; (max capturable piece type is 5 for queen; king can't be captured)
     XOR A
     LD (order_idx), A
 

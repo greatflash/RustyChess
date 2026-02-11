@@ -254,11 +254,11 @@ eval_score:     DEFW 0
 eval_color:     DEFB 0
 eval_enemy_color: DEFB 0
 eval_save_sq:   DEFB 0
-rook_file:      DEFB 0
-rook_color:     DEFB 0
-rook_scan_sq:   DEFB 0
-rook_has_friendly_pawn: DEFB 0
-rook_has_any_pawn: DEFB 0
+eval_rook_file: DEFB 0
+eval_rook_color: DEFB 0
+eval_rook_scan_sq: DEFB 0
+eval_rook_has_friendly_pawn: DEFB 0
+eval_rook_has_any_pawn: DEFB 0
 bishop_count_white: DEFB 0
 bishop_count_black: DEFB 0
 
@@ -495,33 +495,33 @@ get_positional_bonus:
     ; Get file of rook
     LD A, (eval_cur_sq)
     AND $07
-    LD (rook_file), A
+    LD (eval_rook_file), A
     
     ; Get rook color
     LD A, (eval_piece)
     AND COLOR_MASK
-    LD (rook_color), A
+    LD (eval_rook_color), A
     
     ; Scan file for pawns
     XOR A
-    LD (rook_has_friendly_pawn), A
-    LD (rook_has_any_pawn), A
+    LD (eval_rook_has_friendly_pawn), A
+    LD (eval_rook_has_any_pawn), A
     
     ; Start at rank 0, iterate through 8 ranks
-    LD A, (rook_file)
-    LD (rook_scan_sq), A
+    LD A, (eval_rook_file)
+    LD (eval_rook_scan_sq), A
     LD B, 8                         ; 8 ranks
     
 .rook_file_scan:
     PUSH BC
     
     ; Check if square is off board (0x88 check)
-    LD A, (rook_scan_sq)
+    LD A, (eval_rook_scan_sq)
     AND OFF_BOARD
     JP NZ, .rook_next_rank
     
     ; Look up piece on square
-    LD A, (rook_scan_sq)
+    LD A, (eval_rook_scan_sq)
     LD HL, board
     LD E, A
     LD D, 0
@@ -538,34 +538,34 @@ get_positional_bonus:
     
     ; It's a pawn - mark that we found one
     LD A, 1
-    LD (rook_has_any_pawn), A
+    LD (eval_rook_has_any_pawn), A
     
     ; Check if it's our color
     LD A, C
     AND COLOR_MASK
     LD B, A
-    LD A, (rook_color)
+    LD A, (eval_rook_color)
     CP B
     JP NZ, .rook_next_rank
     
     ; Friendly pawn on file
     LD A, 1
-    LD (rook_has_friendly_pawn), A
+    LD (eval_rook_has_friendly_pawn), A
     
 .rook_next_rank:
-    LD A, (rook_scan_sq)
+    LD A, (eval_rook_scan_sq)
     ADD A, 16                       ; Next rank (0x88 board)
-    LD (rook_scan_sq), A
+    LD (eval_rook_scan_sq), A
     
     POP BC
     DJNZ .rook_file_scan
     
     ; Determine bonus
-    LD A, (rook_has_friendly_pawn)
+    LD A, (eval_rook_has_friendly_pawn)
     OR A
     JP NZ, .rook_closed             ; Has friendly pawn = closed file
     
-    LD A, (rook_has_any_pawn)
+    LD A, (eval_rook_has_any_pawn)
     OR A
     JP NZ, .rook_semi_open
     
