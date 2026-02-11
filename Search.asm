@@ -992,7 +992,7 @@ sort_d1_moves:
     JP .sd1_store_score
     
 .sd1_non_capture:
-    LD A, 0
+    XOR A
     
 .sd1_store_score:
     LD B, A
@@ -1143,7 +1143,7 @@ sort_d2_moves:
     JP .sd2_store_score
     
 .sd2_non_capture:
-    LD A, 0
+    XOR A
     
 .sd2_store_score:
     LD B, A
@@ -1289,7 +1289,7 @@ sort_d3_moves:
     JP .sd3_store_score
     
 .sd3_non_capture:
-    LD A, 0
+    XOR A
     
 .sd3_store_score:
     LD B, A
