@@ -22,6 +22,11 @@ evaluate:
     ; Clear score accumulators
     LD HL, 0
     LD (eval_score), HL
+    
+    ; Clear bishop counters
+    XOR A
+    LD (bishop_count_white), A
+    LD (bishop_count_black), A
 
     ; Scan all 64 squares
     LD A, 0
@@ -52,6 +57,24 @@ evaluate:
     LD A, (eval_piece)
     AND PIECE_MASK
     LD (eval_type), A
+    
+    ; Count bishops
+    CP 3
+    JP NZ, .not_bishop
+    LD A, (eval_piece)
+    AND COLOR_MASK
+    JP NZ, .black_bishop_count
+    ; White bishop
+    LD A, (bishop_count_white)
+    INC A
+    LD (bishop_count_white), A
+    JP .not_bishop
+.black_bishop_count:
+    ; Black bishop
+    LD A, (bishop_count_black)
+    INC A
+    LD (bishop_count_black), A
+.not_bishop:
 
     ; Get base material value
     CALL get_piece_value            ; Returns HL = value
@@ -87,6 +110,28 @@ evaluate:
     LD (eval_sq), A
     CP $78
     JP C, .scan_loop
+
+    ; --- Apply bishop pair bonus ---
+    LD A, (bishop_count_white)
+    CP 2
+    JP C, .no_white_bishop_pair
+    ; White has bishop pair
+    LD HL, (eval_score)
+    LD DE, 25
+    ADD HL, DE
+    LD (eval_score), HL
+.no_white_bishop_pair:
+
+    LD A, (bishop_count_black)
+    CP 2
+    JP C, .no_black_bishop_pair
+    ; Black has bishop pair
+    LD HL, (eval_score)
+    LD DE, 25
+    OR A
+    SBC HL, DE
+    LD (eval_score), HL
+.no_black_bishop_pair:
 
     ; --- Second pass: check for hanging pieces ---
     LD A, 0
@@ -213,6 +258,13 @@ eval_color:     DEFB 0
 eval_enemy_color: DEFB 0
 eval_save_sq:   DEFB 0
 eval_save_enemy: DEFB 0
+rook_file:      DEFB 0
+rook_color:     DEFB 0
+rook_scan_sq:   DEFB 0
+rook_has_friendly_pawn: DEFB 0
+rook_has_any_pawn: DEFB 0
+bishop_count_white: DEFB 0
+bishop_count_black: DEFB 0
 
 ; =============================================================================
 ; GET PIECE VALUE
@@ -256,10 +308,12 @@ get_positional_bonus:
     JP Z, .knight_bonus
     CP 3
     JP Z, .bishop_bonus
+    CP 4
+    JP Z, .rook_bonus
     CP 6
     JP Z, .king_bonus
 
-    ; Rook/Queen: no positional bonus for now
+    ; Queen: no positional bonus for now
     LD HL, 0
     RET
 
@@ -435,5 +489,98 @@ get_positional_bonus:
     RET
 
 .king_ok:
+    LD HL, 0
+    RET
+
+; --- Rook bonuses ---
+.rook_bonus:
+    ; Check for open/semi-open file
+    ; Get file of rook
+    LD A, (eval_cur_sq)
+    AND $07
+    LD (rook_file), A
+    
+    ; Get rook color
+    LD A, (eval_piece)
+    AND COLOR_MASK
+    LD (rook_color), A
+    
+    ; Scan file for pawns
+    XOR A
+    LD (rook_has_friendly_pawn), A
+    LD (rook_has_any_pawn), A
+    
+    ; Start at rank 0, iterate through 8 ranks
+    LD A, (rook_file)
+    LD (rook_scan_sq), A
+    LD B, 8                         ; 8 ranks
+    
+.rook_file_scan:
+    PUSH BC
+    
+    ; Check if square is off board (0x88 check)
+    LD A, (rook_scan_sq)
+    AND OFF_BOARD
+    JP NZ, .rook_next_rank
+    
+    ; Look up piece on square
+    LD A, (rook_scan_sq)
+    LD HL, board
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD A, (HL)
+    OR A
+    JP Z, .rook_next_rank           ; Empty square
+    
+    ; Check if it's a pawn
+    LD C, A
+    AND PIECE_MASK
+    CP 1
+    JP NZ, .rook_next_rank          ; Not a pawn
+    
+    ; It's a pawn - mark that we found one
+    LD A, 1
+    LD (rook_has_any_pawn), A
+    
+    ; Check if it's our color
+    LD A, C
+    AND COLOR_MASK
+    LD B, A
+    LD A, (rook_color)
+    CP B
+    JP NZ, .rook_next_rank
+    
+    ; Friendly pawn on file
+    LD A, 1
+    LD (rook_has_friendly_pawn), A
+    
+.rook_next_rank:
+    LD A, (rook_scan_sq)
+    ADD A, 16                       ; Next rank (0x88 board)
+    LD (rook_scan_sq), A
+    
+    POP BC
+    DJNZ .rook_file_scan
+    
+    ; Determine bonus
+    LD A, (rook_has_friendly_pawn)
+    OR A
+    JP NZ, .rook_closed             ; Has friendly pawn = closed file
+    
+    LD A, (rook_has_any_pawn)
+    OR A
+    JP NZ, .rook_semi_open
+    
+    ; No pawns on file = open file
+    LD HL, 15
+    RET
+    
+.rook_semi_open:
+    ; No friendly pawns but enemy pawn = semi-open
+    LD HL, 10
+    RET
+    
+.rook_closed:
     LD HL, 0
     RET
