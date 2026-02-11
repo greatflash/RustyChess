@@ -64,6 +64,8 @@ ai_move:
     ; --- MVV-LVA Move Ordering ---
     ; Score each move: captures get victim_type * 7 - attacker_type
     ; Non-captures get 0
+    ; Multiplier 7 ensures captures always score higher than non-captures
+    ; since max piece type is 6, and victim_type * 7 > attacker_type always
     XOR A
     LD (order_idx), A
 
@@ -113,6 +115,7 @@ ai_move:
     LD C, A                         ; C = attacker type
 
     ; Score = victim_type * 7 - attacker_type
+    ; Efficient Z80 multiply by 7: *2, +orig (*3), *2 (*6), +orig (*7)
     LD A, B
     ADD A, A                        ; *2
     ADD A, B                        ; *3

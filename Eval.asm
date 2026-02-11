@@ -111,7 +111,8 @@ evaluate:
     CP $78
     JP C, .scan_loop
 
-    ; --- Apply bishop pair bonus ---
+    ; --- Apply bishop pair bonus (+25 cp) ---
+    ; This bonus is always active and rewards having 2+ bishops
     LD A, (bishop_count_white)
     CP 2
     JP C, .no_white_bishop_pair
@@ -178,14 +179,10 @@ evaluate:
 
     ; Check if attacked by enemy
     LD A, (eval_cur_sq)
-    LD B, A                         ; Save square for defender check
     LD (eval_save_sq), A
     LD A, (eval_enemy_color)
-    LD C, A                         ; Save enemy color
-    LD (eval_save_enemy), A
-    
+    LD B, A                         ; B = attacking side color
     LD A, (eval_save_sq)
-    LD B, C                         ; B = attacking side color
     CALL is_square_attacked
     JP Z, .next_hanging             ; Not attacked, skip
 
@@ -257,7 +254,6 @@ eval_score:     DEFW 0
 eval_color:     DEFB 0
 eval_enemy_color: DEFB 0
 eval_save_sq:   DEFB 0
-eval_save_enemy: DEFB 0
 rook_file:      DEFB 0
 rook_color:     DEFB 0
 rook_scan_sq:   DEFB 0
@@ -493,6 +489,7 @@ get_positional_bonus:
     RET
 
 ; --- Rook bonuses ---
+; These bonuses are always active and help evaluate rook positioning
 .rook_bonus:
     ; Check for open/semi-open file
     ; Get file of rook
