@@ -2,13 +2,13 @@
 ; RUSTY CHESS - AI Search (Negamax with Alpha-Beta)
 ; =============================================================================
 
-SEARCH_DEPTH    EQU 1
+SEARCH_DEPTH    EQU 2
 SCORE_INF       EQU 30000
 SCORE_MATE      EQU 20000
 QSEARCH_MAX_DEPTH EQU 2
 
 UNDO_ENTRY_SIZE EQU 15
-UNDO_MAX        EQU 10
+UNDO_MAX        EQU 20
 
 UNDO_FROM       EQU 0
 UNDO_TO         EQU 1
@@ -60,6 +60,172 @@ ai_move:
     LD A, (ai_tie_counter)
     ADD A, 7
     LD (ai_tie_counter), A
+
+    ; --- MVV-LVA Move Ordering ---
+    ; Score each move: captures get victim_type * 7 - attacker_type
+    ; Non-captures get 0
+    ; Multiplier 7 ensures captures always score higher than non-captures
+    ; (max capturable piece type is 5 for queen; king can't be captured)
+    XOR A
+    LD (order_idx), A
+
+.score_loop:
+    LD A, (order_idx)
+    LD B, A
+    LD A, (ai_root_count)
+    CP B
+    JP Z, .score_done
+    JP C, .score_done
+
+    ; Get move at index order_idx
+    LD A, (order_idx)
+    LD L, A
+    LD H, 0
+    ADD HL, HL                      ; *2 for move entry
+    LD DE, ai_root_moves
+    ADD HL, DE
+    LD A, (HL)                      ; from_sq
+    LD (order_from), A
+    INC HL
+    LD A, (HL)                      ; to_sq
+    LD (order_to), A
+
+    ; Look up victim at to_sq
+    LD A, (order_to)
+    LD HL, board
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD A, (HL)
+    OR A
+    JP Z, .score_non_capture        ; No capture
+
+    ; It's a capture - get victim type
+    AND PIECE_MASK
+    LD B, A                         ; B = victim type
+
+    ; Get attacker type
+    LD A, (order_from)
+    LD HL, board
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD A, (HL)
+    AND PIECE_MASK
+    LD C, A                         ; C = attacker type
+
+    ; Score = victim_type * 7 - attacker_type
+    ; Efficient Z80 multiply by 7: *2, +orig (*3), *2 (*6), +orig (*7)
+    LD A, B
+    ADD A, A                        ; *2
+    ADD A, B                        ; *3
+    ADD A, A                        ; *6
+    ADD A, B                        ; *7
+    SUB C
+    JP .store_score
+
+.score_non_capture:
+    LD A, 0
+
+.store_score:
+    LD B, A                         ; B = score to store
+    LD A, (order_idx)
+    LD L, A
+    LD H, 0
+    LD DE, ai_move_scores
+    ADD HL, DE
+    LD (HL), B
+
+    LD A, (order_idx)
+    INC A
+    LD (order_idx), A
+    JP .score_loop
+
+.score_done:
+    ; --- Bubble sort moves by score (descending) ---
+    LD A, (ai_root_count)
+    CP 2
+    JP C, .sort_done                ; 0 or 1 moves, no sort needed
+
+.sort_outer:
+    XOR A
+    LD (sort_swapped), A
+    XOR A
+    LD (order_idx), A
+
+.sort_inner:
+    LD A, (order_idx)
+    INC A
+    LD B, A
+    LD A, (ai_root_count)
+    CP B
+    JP Z, .sort_check
+    JP C, .sort_check
+
+    ; Compare scores[i] and scores[i+1]
+    LD A, (order_idx)
+    LD HL, ai_move_scores
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD B, (HL)                      ; scores[i]
+    INC HL
+    LD C, (HL)                      ; scores[i+1]
+
+    ; If scores[i] < scores[i+1], swap
+    LD A, B
+    CP C
+    JP NC, .no_swap
+
+    ; Swap scores
+    LD A, (order_idx)
+    LD HL, ai_move_scores
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD (HL), C
+    INC HL
+    LD (HL), B
+
+    ; Swap moves
+    LD A, (order_idx)
+    LD L, A
+    LD H, 0
+    ADD HL, HL
+    LD DE, ai_root_moves
+    ADD HL, DE
+    PUSH HL                         ; Save move[i] address
+    LD B, (HL)                      ; from[i]
+    INC HL
+    LD C, (HL)                      ; to[i]
+    INC HL
+    LD D, (HL)                      ; from[i+1]
+    INC HL
+    LD E, (HL)                      ; to[i+1]
+    POP HL                          ; Restore move[i] address
+    LD (HL), D                      ; from[i] = from[i+1]
+    INC HL
+    LD (HL), E                      ; to[i] = to[i+1]
+    INC HL
+    LD (HL), B                      ; from[i+1] = old from[i]
+    INC HL
+    LD (HL), C                      ; to[i+1] = old to[i]
+
+    LD A, 1
+    LD (sort_swapped), A
+
+.no_swap:
+    LD A, (order_idx)
+    INC A
+    LD (order_idx), A
+    JP .sort_inner
+
+.sort_check:
+    LD A, (sort_swapped)
+    OR A
+    JP NZ, .sort_outer
+
+.sort_done:
 
 .root_loop:
     LD A, (ai_cur_idx)
@@ -509,6 +675,11 @@ ai_alpha:          DEFW 0
 ai_cur_idx:        DEFB 0
 ai_cur_score:      DEFW 0
 ai_tie_counter:    DEFB 0
+ai_move_scores:    DEFS MAX_MOVES, 0
+order_idx:         DEFB 0
+order_from:        DEFB 0
+order_to:          DEFB 0
+sort_swapped:      DEFB 0
 
 ; =============================================================================
 ; NEGAMAX SEARCH
