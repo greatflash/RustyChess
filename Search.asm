@@ -2,13 +2,13 @@
 ; RUSTY CHESS - AI Search (Negamax with Alpha-Beta)
 ; =============================================================================
 
-SEARCH_DEPTH    EQU 3
+SEARCH_DEPTH    EQU 2
 SCORE_INF       EQU 30000
 SCORE_MATE      EQU 20000
-QSEARCH_MAX_DEPTH EQU 4
+QSEARCH_MAX_DEPTH EQU 2
 
 UNDO_ENTRY_SIZE EQU 15
-UNDO_MAX        EQU 20
+UNDO_MAX        EQU 10
 
 UNDO_FROM       EQU 0
 UNDO_TO         EQU 1
@@ -697,8 +697,6 @@ negamax:
 
     ; Copy to depth buffer
     LD A, (search_depth)
-    CP 3
-    JP Z, .copy_d3
     CP 2
     JP Z, .copy_d2
     ; Depth 1 - copy to srch_moves_1
@@ -710,8 +708,6 @@ negamax:
     LD C, A
     LD B, 0
     LDIR
-    ; MVV-LVA sort for depth 1
-    CALL sort_d1_moves
     JP .search_init
 .copy_d2:
     ; Depth 2 - copy to srch_moves_2
@@ -723,21 +719,6 @@ negamax:
     LD C, A
     LD B, 0
     LDIR
-    ; MVV-LVA sort for depth 2
-    CALL sort_d2_moves
-    JP .search_init
-.copy_d3:
-    ; Depth 3 - copy to srch_moves_3
-    LD HL, move_list
-    LD DE, srch_moves_3
-    LD A, (move_list_count)
-    LD (srch_count_3), A
-    ADD A, A
-    LD C, A
-    LD B, 0
-    LDIR
-    ; MVV-LVA sort for depth 3
-    CALL sort_d3_moves
 
 .search_init:
     LD HL, -SCORE_INF
@@ -747,8 +728,6 @@ negamax:
 
 .move_loop:
     LD A, (search_depth)
-    CP 3
-    JP Z, .cnt_d3
     CP 2
     JP Z, .cnt_d2
     ; Depth 1
@@ -756,9 +735,6 @@ negamax:
     JP .got_cnt
 .cnt_d2:
     LD A, (srch_count_2)
-    JP .got_cnt
-.cnt_d3:
-    LD A, (srch_count_3)
 .got_cnt:
     LD B, A
     LD A, (node_cur_idx)
@@ -767,8 +743,6 @@ negamax:
 
     ; Get move
     LD A, (search_depth)
-    CP 3
-    JP Z, .mov_d3
     CP 2
     JP Z, .mov_d2
     ; Depth 1
@@ -785,14 +759,6 @@ negamax:
     LD H, 0
     ADD HL, HL
     LD DE, srch_moves_2
-    ADD HL, DE
-    JP .got_mov
-.mov_d3:
-    LD A, (node_cur_idx)
-    LD L, A
-    LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_3
     ADD HL, DE
 .got_mov:
     LD A, (HL)
@@ -928,453 +894,6 @@ negamax:
     RET
 .nm_stalemate:
     LD HL, 0
-    RET
-
-; =============================================================================
-; MVV-LVA MOVE ORDERING FOR NEGAMAX DEPTH BUFFERS
-; =============================================================================
-; Sort moves in srch_moves_1 using MVV-LVA
-sort_d1_moves:
-    LD A, (srch_count_1)
-    CP 2
-    RET C                           ; 0 or 1 moves, no sort needed
-    
-    ; Score all moves
-    XOR A
-    LD (order_idx), A
-.sd1_score_loop:
-    LD A, (order_idx)
-    LD B, A
-    LD A, (srch_count_1)
-    CP B
-    JP Z, .sd1_score_done
-    
-    ; Get move
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_1
-    ADD HL, DE
-    LD A, (HL)                      ; from_sq
-    LD (order_from), A
-    INC HL
-    LD A, (HL)                      ; to_sq
-    LD (order_to), A
-    
-    ; Look up victim at to_sq
-    LD A, (order_to)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    OR A
-    JP Z, .sd1_non_capture
-    
-    ; Capture - score = victim*7 - attacker
-    AND PIECE_MASK
-    LD B, A                         ; B = victim type
-    LD A, (order_from)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    AND PIECE_MASK
-    LD C, A                         ; C = attacker type
-    LD A, B
-    ADD A, A
-    ADD A, B
-    ADD A, A
-    ADD A, B                        ; A = victim*7
-    SUB C
-    JP .sd1_store_score
-    
-.sd1_non_capture:
-    XOR A
-    
-.sd1_store_score:
-    LD B, A
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    LD DE, node_move_scores
-    ADD HL, DE
-    LD (HL), B
-    
-    LD A, (order_idx)
-    INC A
-    LD (order_idx), A
-    JP .sd1_score_loop
-    
-.sd1_score_done:
-    ; Bubble sort
-.sd1_sort_outer:
-    XOR A
-    LD (sort_swapped), A
-    LD (order_idx), A
-    
-.sd1_sort_inner:
-    LD A, (order_idx)
-    INC A
-    LD B, A
-    LD A, (srch_count_1)
-    CP B
-    JP Z, .sd1_sort_check
-    
-    ; Compare scores[i] and scores[i+1]
-    LD A, (order_idx)
-    LD HL, node_move_scores
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD B, (HL)
-    INC HL
-    LD C, (HL)
-    
-    ; If scores[i] < scores[i+1], swap
-    LD A, B
-    CP C
-    JP NC, .sd1_no_swap
-    
-    ; Swap scores
-    LD A, (order_idx)
-    LD HL, node_move_scores
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD (HL), C
-    INC HL
-    LD (HL), B
-    
-    ; Swap moves
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_1
-    ADD HL, DE
-    PUSH HL
-    LD B, (HL)
-    INC HL
-    LD C, (HL)
-    INC HL
-    LD D, (HL)
-    INC HL
-    LD E, (HL)
-    POP HL
-    LD (HL), D
-    INC HL
-    LD (HL), E
-    INC HL
-    LD (HL), B
-    INC HL
-    LD (HL), C
-    
-    LD A, 1
-    LD (sort_swapped), A
-    
-.sd1_no_swap:
-    LD A, (order_idx)
-    INC A
-    LD (order_idx), A
-    JP .sd1_sort_inner
-    
-.sd1_sort_check:
-    LD A, (sort_swapped)
-    OR A
-    JP NZ, .sd1_sort_outer
-    RET
-
-; Sort moves in srch_moves_2 using MVV-LVA
-sort_d2_moves:
-    LD A, (srch_count_2)
-    CP 2
-    RET C
-    
-    XOR A
-    LD (order_idx), A
-.sd2_score_loop:
-    LD A, (order_idx)
-    LD B, A
-    LD A, (srch_count_2)
-    CP B
-    JP Z, .sd2_score_done
-    
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_2
-    ADD HL, DE
-    LD A, (HL)
-    LD (order_from), A
-    INC HL
-    LD A, (HL)
-    LD (order_to), A
-    
-    LD A, (order_to)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    OR A
-    JP Z, .sd2_non_capture
-    
-    AND PIECE_MASK
-    LD B, A
-    LD A, (order_from)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    AND PIECE_MASK
-    LD C, A
-    LD A, B
-    ADD A, A
-    ADD A, B
-    ADD A, A
-    ADD A, B
-    SUB C
-    JP .sd2_store_score
-    
-.sd2_non_capture:
-    XOR A
-    
-.sd2_store_score:
-    LD B, A
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    LD DE, node_move_scores
-    ADD HL, DE
-    LD (HL), B
-    
-    LD A, (order_idx)
-    INC A
-    LD (order_idx), A
-    JP .sd2_score_loop
-    
-.sd2_score_done:
-.sd2_sort_outer:
-    XOR A
-    LD (sort_swapped), A
-    LD (order_idx), A
-    
-.sd2_sort_inner:
-    LD A, (order_idx)
-    INC A
-    LD B, A
-    LD A, (srch_count_2)
-    CP B
-    JP Z, .sd2_sort_check
-    
-    LD A, (order_idx)
-    LD HL, node_move_scores
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD B, (HL)
-    INC HL
-    LD C, (HL)
-    
-    LD A, B
-    CP C
-    JP NC, .sd2_no_swap
-    
-    LD A, (order_idx)
-    LD HL, node_move_scores
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD (HL), C
-    INC HL
-    LD (HL), B
-    
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_2
-    ADD HL, DE
-    PUSH HL
-    LD B, (HL)
-    INC HL
-    LD C, (HL)
-    INC HL
-    LD D, (HL)
-    INC HL
-    LD E, (HL)
-    POP HL
-    LD (HL), D
-    INC HL
-    LD (HL), E
-    INC HL
-    LD (HL), B
-    INC HL
-    LD (HL), C
-    
-    LD A, 1
-    LD (sort_swapped), A
-    
-.sd2_no_swap:
-    LD A, (order_idx)
-    INC A
-    LD (order_idx), A
-    JP .sd2_sort_inner
-    
-.sd2_sort_check:
-    LD A, (sort_swapped)
-    OR A
-    JP NZ, .sd2_sort_outer
-    RET
-
-; Sort moves in srch_moves_3 using MVV-LVA
-sort_d3_moves:
-    LD A, (srch_count_3)
-    CP 2
-    RET C
-    
-    XOR A
-    LD (order_idx), A
-.sd3_score_loop:
-    LD A, (order_idx)
-    LD B, A
-    LD A, (srch_count_3)
-    CP B
-    JP Z, .sd3_score_done
-    
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_3
-    ADD HL, DE
-    LD A, (HL)
-    LD (order_from), A
-    INC HL
-    LD A, (HL)
-    LD (order_to), A
-    
-    LD A, (order_to)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    OR A
-    JP Z, .sd3_non_capture
-    
-    AND PIECE_MASK
-    LD B, A
-    LD A, (order_from)
-    LD HL, board
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD A, (HL)
-    AND PIECE_MASK
-    LD C, A
-    LD A, B
-    ADD A, A
-    ADD A, B
-    ADD A, A
-    ADD A, B
-    SUB C
-    JP .sd3_store_score
-    
-.sd3_non_capture:
-    XOR A
-    
-.sd3_store_score:
-    LD B, A
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    LD DE, node_move_scores
-    ADD HL, DE
-    LD (HL), B
-    
-    LD A, (order_idx)
-    INC A
-    LD (order_idx), A
-    JP .sd3_score_loop
-    
-.sd3_score_done:
-.sd3_sort_outer:
-    XOR A
-    LD (sort_swapped), A
-    LD (order_idx), A
-    
-.sd3_sort_inner:
-    LD A, (order_idx)
-    INC A
-    LD B, A
-    LD A, (srch_count_3)
-    CP B
-    JP Z, .sd3_sort_check
-    
-    LD A, (order_idx)
-    LD HL, node_move_scores
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD B, (HL)
-    INC HL
-    LD C, (HL)
-    
-    LD A, B
-    CP C
-    JP NC, .sd3_no_swap
-    
-    LD A, (order_idx)
-    LD HL, node_move_scores
-    LD E, A
-    LD D, 0
-    ADD HL, DE
-    LD (HL), C
-    INC HL
-    LD (HL), B
-    
-    LD A, (order_idx)
-    LD L, A
-    LD H, 0
-    ADD HL, HL
-    LD DE, srch_moves_3
-    ADD HL, DE
-    PUSH HL
-    LD B, (HL)
-    INC HL
-    LD C, (HL)
-    INC HL
-    LD D, (HL)
-    INC HL
-    LD E, (HL)
-    POP HL
-    LD (HL), D
-    INC HL
-    LD (HL), E
-    INC HL
-    LD (HL), B
-    INC HL
-    LD (HL), C
-    
-    LD A, 1
-    LD (sort_swapped), A
-    
-.sd3_no_swap:
-    LD A, (order_idx)
-    INC A
-    LD (order_idx), A
-    JP .sd3_sort_inner
-    
-.sd3_sort_check:
-    LD A, (sort_swapped)
-    OR A
-    JP NZ, .sd3_sort_outer
     RET
 
 ; =============================================================================
@@ -1728,7 +1247,6 @@ search_beta:        DEFW 0
 node_best:          DEFW 0
 node_cur_idx:       DEFB 0
 node_child_score:   DEFW 0
-node_move_scores:   DEFS MAX_MOVES, 0
 
 ; =============================================================================
 ; SIGNED 16-BIT COMPARE
@@ -2136,8 +1654,6 @@ srch_moves_1:   DEFS MAX_MOVES * 2, 0
 srch_count_1:   DEFB 0
 srch_moves_2:   DEFS MAX_MOVES * 2, 0
 srch_count_2:   DEFB 0
-srch_moves_3:   DEFS MAX_MOVES * 2, 0
-srch_count_3:   DEFB 0
 
 ; Quiescence search data (kept for future use)
 qs_stand_pat:   DEFW 0
