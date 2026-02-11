@@ -88,6 +88,105 @@ evaluate:
     CP $78
     JP C, .scan_loop
 
+    ; --- Second pass: check for hanging pieces ---
+    LD A, 0
+    LD (eval_sq), A
+
+.hanging_loop:
+    LD A, (eval_sq)
+    LD B, A
+    AND OFF_BOARD
+    JP NZ, .next_hanging
+
+    ; Get piece
+    LD A, B
+    LD HL, board
+    LD E, A
+    LD D, 0
+    ADD HL, DE
+    LD A, (HL)
+    OR A
+    JP Z, .next_hanging
+
+    ; Save piece info
+    LD (eval_piece), A
+    LD A, B
+    LD (eval_cur_sq), A
+
+    ; Get piece type
+    LD A, (eval_piece)
+    AND PIECE_MASK
+    LD (eval_type), A
+
+    ; Skip kings (type 6)
+    CP 6
+    JP Z, .next_hanging
+
+    ; Get piece color
+    LD A, (eval_piece)
+    AND COLOR_MASK
+    LD (eval_color), A
+
+    ; Get enemy color
+    XOR COLOR_MASK
+    LD (eval_enemy_color), A
+
+    ; Check if attacked by enemy
+    LD A, (eval_cur_sq)
+    LD B, A                         ; Save square for defender check
+    LD (eval_save_sq), A
+    LD A, (eval_enemy_color)
+    LD C, A                         ; Save enemy color
+    LD (eval_save_enemy), A
+    
+    LD A, (eval_save_sq)
+    LD B, C                         ; B = attacking side color
+    CALL is_square_attacked
+    JP Z, .next_hanging             ; Not attacked, skip
+
+    ; Piece is attacked - check if defended
+    LD A, (eval_save_sq)
+    LD B, A
+    LD A, (eval_color)
+    LD C, A
+    LD A, B
+    LD B, C                         ; B = defending side color
+    CALL is_square_attacked
+    JP NZ, .next_hanging            ; Is defended, skip
+
+    ; Piece is hanging - apply penalty
+    CALL get_piece_value            ; Returns HL = value
+    
+    ; Halve the value (right shift)
+    SRL H
+    RR L
+
+    ; Apply penalty based on piece color
+    LD A, (eval_color)
+    OR A
+    JP NZ, .hanging_black
+
+    ; White piece hanging: subtract from score
+    LD DE, (eval_score)
+    EX DE, HL
+    OR A
+    SBC HL, DE
+    LD (eval_score), HL
+    JP .next_hanging
+
+.hanging_black:
+    ; Black piece hanging: add to score (makes position better for white)
+    LD DE, (eval_score)
+    ADD HL, DE
+    LD (eval_score), HL
+
+.next_hanging:
+    LD A, (eval_sq)
+    INC A
+    LD (eval_sq), A
+    CP $78
+    JP C, .hanging_loop
+
     ; Score is from white's perspective
     ; If black to move, negate
     LD HL, (eval_score)
@@ -110,6 +209,10 @@ eval_piece:     DEFB 0
 eval_cur_sq:    DEFB 0
 eval_type:      DEFB 0
 eval_score:     DEFW 0
+eval_color:     DEFB 0
+eval_enemy_color: DEFB 0
+eval_save_sq:   DEFB 0
+eval_save_enemy: DEFB 0
 
 ; =============================================================================
 ; GET PIECE VALUE
